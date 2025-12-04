@@ -1446,7 +1446,7 @@ func (f *Fs) PutStream(ctx context.Context, in io.Reader, src fs.ObjectInfo, opt
 // directories above that
 func (f *Fs) mkParentDir(ctx context.Context, remote string) error {
 	parent := path.Dir(remote)
-	return f.mkdir(ctx, path.Join(f.absRoot, parent))
+	return f.mkdir(ctx, f.remotePath(parent))
 }
 
 // mkdir makes the directory and parents using native paths
@@ -1486,8 +1486,7 @@ func (f *Fs) mkdir(ctx context.Context, dirPath string) error {
 
 // Mkdir makes the root directory of the Fs object
 func (f *Fs) Mkdir(ctx context.Context, dir string) error {
-	root := path.Join(f.absRoot, dir)
-	return f.mkdir(ctx, root)
+	return f.mkdir(ctx, f.remotePath(dir))
 }
 
 // DirSetModTime sets the directory modtime for dir
@@ -1511,12 +1510,11 @@ func (f *Fs) Rmdir(ctx context.Context, dir string) error {
 		return fs.ErrorDirectoryNotEmpty
 	}
 	// Remove the directory
-	root := path.Join(f.absRoot, dir)
 	c, err := f.getSftpConnection(ctx)
 	if err != nil {
 		return fmt.Errorf("Rmdir: %w", err)
 	}
-	err = c.sftpClient.RemoveDirectory(root)
+	err = c.sftpClient.RemoveDirectory(f.remotePath(dir))
 	f.putSftpConnection(&c, err)
 	return err
 }
@@ -1536,7 +1534,7 @@ func (f *Fs) Move(ctx context.Context, src fs.Object, remote string) (fs.Object,
 	if err != nil {
 		return nil, fmt.Errorf("Move: %w", err)
 	}
-	srcPath, dstPath := srcObj.path(), path.Join(f.absRoot, remote)
+	srcPath, dstPath := srcObj.path(), f.remotePath(remote)
 	if _, ok := c.sftpClient.HasExtension("posix-rename@openssh.com"); ok {
 		err = c.sftpClient.PosixRename(srcPath, dstPath)
 	} else {
@@ -1576,7 +1574,7 @@ func (f *Fs) Copy(ctx context.Context, src fs.Object, remote string) (fs.Object,
 	if err != nil {
 		return nil, fmt.Errorf("Copy: %w", err)
 	}
-	srcPath, dstPath := srcObj.path(), path.Join(f.absRoot, remote)
+	srcPath, dstPath := srcObj.path(), f.remotePath(remote)
 	err = c.sftpClient.Link(srcPath, dstPath)
 	f.putSftpConnection(&c, err)
 	if err != nil {
@@ -1609,8 +1607,8 @@ func (f *Fs) DirMove(ctx context.Context, src fs.Fs, srcRemote, dstRemote string
 		fs.Debugf(srcFs, "Can't move directory - not same remote type")
 		return fs.ErrorCantDirMove
 	}
-	srcPath := path.Join(srcFs.absRoot, srcRemote)
-	dstPath := path.Join(f.absRoot, dstRemote)
+	srcPath := srcFs.remotePath(srcRemote)
+	dstPath := f.remotePath(dstRemote)
 
 	// Check if destination exists
 	ok, err := f.dirExists(ctx, dstPath)
@@ -2177,15 +2175,11 @@ func (o *Object) setMetadata(info os.FileInfo) {
 
 // statRemote stats the file or directory at the remote given
 func (f *Fs) stat(ctx context.Context, remote string) (info os.FileInfo, err error) {
-	absPath := remote
-	if !strings.HasPrefix(remote, "/") {
-		absPath = path.Join(f.absRoot, remote)
-	}
 	c, err := f.getSftpConnection(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("stat: %w", err)
 	}
-	info, err = c.sftpClient.Stat(absPath)
+	info, err = c.sftpClient.Stat(f.remotePath(remote))
 	f.putSftpConnection(&c, err)
 	return info, err
 }
